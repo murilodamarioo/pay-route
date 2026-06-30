@@ -1,6 +1,6 @@
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
+  provider     = "prisma-client-js"
+  output       = "../generated/prisma/client"
   moduleFormat = "cjs"
 }
 
@@ -65,7 +65,7 @@ model Acquirer {
   priority      Int          @default(1)
   feePercentage Decimal      @map("fee_percentage") @db.Decimal(5, 4)
   feeFixed      Decimal      @map("fee_fixed") @db.Decimal(10, 2)
-  maxTimout     Int          @default(5000) @map("max_timout")
+  maxTimeout     Int          @default(5000) @map("max_timeout")
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 

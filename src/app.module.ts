@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config'
 import { envSchema } from './config/env'
 
 import { HealthModule } from './modules/health/health.module'
+import { DatabaseModule } from './shared/database/database.module'
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { HealthModule } from './modules/health/health.module'
       validate: env => envSchema.parse(env),
       isGlobal: true
     }),
+    DatabaseModule,
     HealthModule
   ],
 })
