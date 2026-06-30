@@ -1,0 +1,176 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum TransactionStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  ERROR
+  FALLBACK
+}
+
+enum AcquirerCode {
+  CIELO
+  STONE
+  ADYEN
+  STRIPE
+}
+
+enum CircuitState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
+enum TransactionEventType {
+  CREATED
+  ROUTING_DECIDED
+  ACQUIRER_CALLED
+  ACQUIRER_RESPONDED
+  FALLBACK_TRIGGERED
+  STATUS_CHANGED
+  CAPTURE_REQUESTED
+  CAPTURE_COMPLETED
+  CANCELLATION_REQUESTED
+  CANCELLATION_COMPLETED
+  WEBHOOK_SENT
+  WEBHOOK_FAILED
+}
+
+enum CardBrand {
+  VISA
+  MASTERCARD
+  ELO
+  AMEX
+  HIPERCARD
+  UNKNOWN
+}
+
+// ─── MODELS ────────────────────────────────────────────────────────────────────
+
+model Acquirer {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String       @db.VarChar(100)
+  code          AcquirerCode @unique
+  isActive      Boolean      @default(true) @map("is_active")
+  priority      Int          @default(1)
+  feePercentage Decimal      @map("fee_percentage") @db.Decimal(5, 4)
+  feeFixed      Decimal      @map("fee_fixed") @db.Decimal(10, 2)
+  maxTimout     Int          @default(5000) @map("max_timout")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  healthRecords AcquirerHealth[]
+  routingRules  RoutingRule[]
+  transactions  Transaction[]
+
+  @@map("acquirers")
+}
+
+model AcquirerHealth {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  acquirerId    String       @map("acquirer_id") @db.Uuid
+  approvalRate  Decimal      @map("approval_rate") @db.Decimal(5, 4)
+  avgLatencyMs  Int          @map("avg_latency_ms")
+  errorRate     Decimal      @map("error_rate") @db.Decimal(5, 4)
+  p95LatencyMs  Int          @default(0) @map("p95_latency_ms")
+  totalSamples  Int          @default(0) @map("total_samples")
+  circuitState  CircuitState @default(CLOSED) @map("circuit_state")
+  isHealthy     Boolean      @default(true) @map("is_healthy")
+  lastCheckedAt DateTime     @map("last_checked_at") @db.Timestamptz
+  windowStart   DateTime     @map("window_start") @db.Timestamptz
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  acquirer Acquirer @relation(fields: [acquirerId], references: [id])
+
+  @@index([acquirerId, lastCheckedAt(sort: Desc)])
+  @@map("acquirer_health")
+}
+
+model RoutingRule {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String  @db.VarChar(200)
+  description String? @db.Text
+  priority    Int
+  isActive    Boolean @default(true) @map("is_active")
+
+  conditions Json
+
+  targetAcquirerId String   @map("target_acquirer_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  targetAcquirer Acquirer      @relation(fields: [targetAcquirerId], references: [id])
+  transactions   Transaction[]
+
+  @@index([isActive, priority(sort: Asc)])
+  @@map("routing_rules")
+}
+
+model Transaction {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  externalId     String  @map("external_id") @db.VarChar(255)
+  idempotencyKey String? @unique @map("idempotency_key") @db.VarChar(255)
+
+  amount   Int
+  currency String            @default("BRL") @db.Char(3)
+  status   TransactionStatus @default(PENDING)
+
+  cardLastFour   String?    @map("card_last_four") @db.Char(4)
+  cardBrand      CardBrand? @default(UNKNOWN) @map("card_brand")
+  cardHolderName String?    @map("card_holder_name") @db.VarChar(200)
+
+  acquirerId            String? @map("acquirer_id") @db.Uuid
+  routingRuleId         String? @map("routing_rule_id") @db.Uuid
+  fallbackCount         Int     @default(0) @map("fallback_count")
+  acquirerTransactionId String? @map("acquirer_transaction_id") @db.VarChar(255)
+
+  latencyMs         Int? @map("latency_ms")
+  acquirerLatencyMs Int? @map("acquirer_latency_ms")
+
+  metadata Json?
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+
+  acquirer    Acquirer?          @relation(fields: [acquirerId], references: [id])
+  routingRule RoutingRule?       @relation(fields: [routingRuleId], references: [id])
+  events      TransactionEvent[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([acquirerId, createdAt(sort: Desc)])
+  @@index([externalId])
+  @@index([idempotencyKey])
+  @@map("transactions")
+}
+
+model TransactionEvent {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId String               @map("transaction_id") @db.Uuid
+  type          TransactionEventType
+
+  statusBefore TransactionStatus? @map("status_before")
+  statusAfter  TransactionStatus? @map("status_after")
+
+  acquirerCode AcquirerCode? @map("acquirer_code")
+
+  payload Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([transactionId, createdAt(sort: Asc)])
+  @@map("transaction_events")
+}

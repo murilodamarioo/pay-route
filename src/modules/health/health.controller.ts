@@ -13,7 +13,6 @@ export class HealthController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @Get()
   check() {
     return this.healthService.check()
   }
